@@ -52,9 +52,6 @@ jobs:
   post:
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    defaults:
-      run:
-        working-directory: dialekt-bot
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -68,9 +65,16 @@ jobs:
           TOPIC: ${{ github.event.inputs.topic || 'random' }}
           FERVOUR: ${{ github.event.inputs.fervour }}
         run: |
+          BOT="$(find . -name soviet-bot.js -not -path '*/node_modules/*' | head -n 1)"
+          if [ -z "$BOT" ]; then
+            echo "Could not find soviet-bot.js anywhere in the repo. Files present:"
+            find . -type f -not -path '*/.git/*'
+            exit 1
+          fi
+          echo "Found bot at: $BOT"
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
             echo "Dry run — generating only, nothing will be posted."
-            node soviet-bot.js
+            node "$BOT"
           else
-            node soviet-bot.js --post
+            node "$BOT" --post
           fi
