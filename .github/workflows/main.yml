@@ -1,0 +1,90 @@
+# Posts a Soviet pronouncement to Bluesky three times a day.
+#
+# One-time setup:
+#   1. This file lives at .github/workflows/post-to-bluesky.yml (leave it here).
+#   2. soviet-bot.js sits in the repo root.
+#   3. Repo Settings > Secrets and variables > Actions > New repository secret:
+#        BSKY_HANDLE        = your.handle.bsky.social
+#        BSKY_APP_PASSWORD  = an App Password (bsky.app/settings/app-passwords)
+#   4. Commit to your DEFAULT branch (main), then use the "Run workflow" button
+#      on the Actions tab to test. The dropdown offers topic / voice / fervour
+#      and a "dry run" checkbox.
+#
+# Note: GitHub cron is UTC and best-effort — runs can drift a few minutes, and
+# scheduled workflows pause after ~60 days without repo activity, so push
+# occasionally to keep it alive.
+
+name: Soviet Discourse Bot
+
+on:
+  schedule:
+    - cron: "0 8 * * *"    # 08:00 UTC
+    - cron: "0 14 * * *"   # 14:00 UTC
+    - cron: "0 20 * * *"   # 20:00 UTC
+  workflow_dispatch:
+    inputs:
+      topic:
+        description: "Topic"
+        type: choice
+        default: random
+        options:
+          - random
+          - agriculture
+          - industry
+          - theory
+          - west
+          - discipline
+          - lysenko
+          - cosmism
+          - tektology
+      voice:
+        description: "Voice"
+        type: choice
+        default: auto
+        options:
+          - auto
+          - classic
+          - online
+      fervour:
+        description: "Fervour (intensity)"
+        type: choice
+        default: random
+        options:
+          - random
+          - "1"
+          - "2"
+          - "3"
+          - "4"
+      dry_run:
+        description: "Dry run — generate but do NOT post"
+        type: boolean
+        default: false
+
+# Prevent overlapping runs.
+concurrency:
+  group: bluesky-post
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Issue pronouncement
+        env:
+          BSKY_HANDLE: ${{ secrets.BSKY_HANDLE }}
+          BSKY_APP_PASSWORD: ${{ secrets.BSKY_APP_PASSWORD }}
+          VOICE: ${{ github.event.inputs.voice || 'auto' }}
+          TOPIC: ${{ github.event.inputs.topic || 'random' }}
+          FERVOUR: ${{ github.event.inputs.fervour }}
+        run: |
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            echo "Dry run — generating only, nothing will be posted."
+            node soviet-bot.js
+          else
+            node soviet-bot.js --post
+          fi
