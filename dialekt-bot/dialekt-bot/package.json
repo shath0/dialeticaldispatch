@@ -1,0 +1,16 @@
+{
+  "name": "dialekt-bot",
+  "version": "1.0.0",
+  "description": "ДИАЛЕКТ — a satirical Soviet-discourse bot that posts to Bluesky. Zero dependencies.",
+  "private": true,
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node soviet-bot.js",
+    "post": "node soviet-bot.js --post"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}
