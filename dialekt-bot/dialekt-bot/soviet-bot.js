@@ -17,7 +17,7 @@
  *   BSKY_PDS            PDS base URL (default https://bsky.social)
  *   TOPIC               one of the topic keys below (default: random)
  *   FERVOUR             1..4 (default: random, weighted low)
- *   VOICE               classic | online | auto (default: auto, online-leaning)
+ *   VOICE               classic | online | special | auto (default: auto)
  *   DRY_RUN             "false" to actually post (default: "true")
  *
  * Usage:
@@ -437,44 +437,129 @@ const pick = a => a[Math.floor(Math.random() * a.length)];
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
 const _seg = (typeof Intl !== "undefined" && Intl.Segmenter) ? new Intl.Segmenter("en", { granularity: "grapheme" }) : null;
 const glen = s => _seg ? [..._seg.segment(s)].length : Array.from(s).length; // grapheme count, matches Bluesky
+
+/* Numbers. Random-in-a-band reads as machine noise; specific numbers are
+   funnier. Bias toward the comedically-loaded ones — just-over-100, absurdly
+   round, or suspiciously precise — with a small tail of true randomness so it
+   never becomes its own predictable set. */
+const grp = n => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+const FUNNY_PCT = [101, 102, 103, 104, 107, 110, 110, 112, 118, 127, 137, 150, 150, 200, 200, 240, 300, 400, 500, 700, 1000, 4000, 10000, 1000000];
+const FUNNY_N   = [1, 2, 3, 3, 7, 7, 9, 11, 12, 14, 17, 40, 44, 88, 100, 144, 200, 365, 500, 1000, 4000, 9000, 40000, 1000000];
+const pctVal = () => Math.random() < 0.15 ? 100 + Math.floor(Math.random() * 315) : pick(FUNNY_PCT);
+const nVal   = () => Math.random() < 0.15 ? 40  + Math.floor(Math.random() * 940) : pick(FUNNY_N);
 const fill = t => t
-  .replace("{P}", 100 + Math.floor(Math.random() * 315))
-  .replace("{N}", 40 + Math.floor(Math.random() * 940));
+  .replace("{P}", grp(pctVal()))
+  .replace("{N}", grp(nVal()));
+
+/* Trailing clauses that let a classic line resolve without the mad-lib
+   always ending on the claim. */
+const asClauses = [
+  "as theory and practice require", "as the correlation of forces demands",
+  "as anyone but a wrecker can see", "as the Plan foresaw",
+  "on schedule, and slightly ahead of it", "with no notes from the Presidium",
+  "pending only the usual paperwork", "and the minutes concur",
+  "to no one's surprise and everyone's relief", "as was, frankly, inevitable"
+];
+
+/* Reactions that comment on the absurdity itself rather than cheerlead — these
+   read like a person replying to the bot, which is the point. */
+const onlineMeta = [
+  "the specificity is what gets me.", "not the triplicate 😭",
+  "why is this the funniest thing i've read today.", "the deadpan is unmatched.",
+  "posting through it.", "i think about this bulletin a normal amount.",
+  "no notes. one note. filed in triplicate.", "the committee said what it said.",
+  "professionally unwell about this.", "and they were NORMAL about it.",
+  "sir. SIR.", "the way this is just… allowed.", "genuinely a masterclass.",
+  "screaming at 'to no one's surprise'.", "this bulletin has no business going this hard."
+];
 
 function classicProducer(topic, lvl) {
-  const o = pick(openers[lvl]), s = pick(subjects[topic]), c = fill(pick(claims[topic]));
-  return (Math.random() < 0.4)
-    ? cap(o + " " + s + " " + c + ". " + pick(closers[lvl]))
-    : cap(o + " " + s + " " + c + ".");
+  const o = pick(openers[lvl]);
+  const s = pick(subjects[topic]);
+  const c = fill(pick(claims[topic]));
+  const cl = pick(closers[lvl]);
+  const r = Math.random();
+
+  // Two collectives in one breath — creates unexpected comedic pairings.
+  if (r < 0.18) {
+    const s2 = pick(subjects[topic]), c2 = fill(pick(claims[topic]));
+    if (Math.random() < 0.5) {
+      const j = pick([", while ", " — meanwhile ", ", and, not to be outdone, "]);
+      return cap(o + " " + s + " " + c + j + s2 + " " + c2 + ".");
+    }
+    const j = pick([" Separately, ", " Elsewhere, ", " In related news, "]);
+    return cap(o + " " + s + " " + c + "." + j + cap(s2) + " " + c2 + ".");
+  }
+  // Lead with the claim; drop the opener entirely.
+  if (r < 0.34) return cap(s) + " " + c + ". " + cl;
+  // Resolve on a trailing clause instead of the claim.
+  if (r < 0.50) return cap(o + " " + s + " " + c + ", " + pick(asClauses) + ".");
+  // Opener + subject + claim + closer.
+  if (r < 0.74) return cap(o + " " + s + " " + c + ". " + cl);
+  // Bare.
+  return cap(o + " " + s + " " + c + ".");
 }
 
 function onlineProducer(topic, lvl) {
   const s = pick(subjects[topic]), c = fill(pick(claims[topic]));
   const r = Math.random();
-  if (r < 0.34) {
+  if (r < 0.30) {
     const p = pick(onlinePrefix);
     return /[.!]$/.test(p) ? p + " " + cap(s) + " " + c + "." : p + " " + s + " " + c + ".";
   }
-  if (r < 0.64) return cap(s) + " " + c + ". " + pick(onlineReaction);
+  if (r < 0.52) return cap(s) + " " + c + ". " + pick(onlineReaction);
+  if (r < 0.70) return cap(s) + " " + c + ". " + pick(onlineMeta); // meta > hype
   return pick(memes)(s, c);
 }
 
-// Try a producer up to 40 times; return the first result under POST_MAX,
+/* Format-breakers. Same vocabulary, wholly different shapes — errata, inter-
+   department sniping, the suggestion box, minutes fragments. These fire rarely;
+   rarity is what keeps a feed from reading as a grid. */
+function specialProducer(topic, lvl) {
+  const s  = pick(subjects[topic]),  c  = fill(pick(claims[topic]));
+  const s2 = pick(subjects[topic]),  c2 = fill(pick(claims[topic]));
+  const cl = pick(closers[lvl]);
+  const item = 2 + Math.floor(Math.random() * 30);
+  const specials = [
+    () => "CORRECTION to yesterday's bulletin: " + cap(s) + " " + c + " — not, as printed, the reverse. The typesetter has been thanked, thoroughly.",
+    () => "ERRATUM: where the record states that " + s + " " + c + ", please read the same, but louder.",
+    () => cap(s) + " " + c + ". " + cap(s2) + ", we note, only " + c2 + " — but we are not comparing.",
+    () => "For the third time of asking: " + s + " " + c + ". The relevant department knows precisely what it did.",
+    () => "From the suggestion box: \u201cwhat if " + s + " " + c + "?\u201d They already have. Suggestion noted, and pre-empted.",
+    () => "Morale forecast: correct, with scattered overfulfilment. " + cap(s) + " " + c + ". " + cl,
+    () => cap(s) + " " + c + ".*\n\n*Footnote redacted, for correctness.",
+    () => "It would be a great shame if it were not widely and immediately known that " + s + " " + c + ".",
+    () => "MINUTES \u2014 item " + item + ": " + cap(s) + " " + c + ". Carried unanimously. Item " + (item + 1) + ": a motion to thank item " + item + ".",
+    () => "Overheard at the Congress: \u201c" + cap(s) + " " + c + "?\u201d Yes. Next question.",
+    () => "Anonymous comrade writes: \u201cis it true " + s + " " + c + "?\u201d It is truer than that.",
+    () => "Weekly tally \u2014 wreckers: 0. Doubters: 0. Reasons " + s + " " + c + ": all of them."
+  ];
+  return pick(specials)();
+}
+
+// Try a producer up to 40 times; return the first result under `max`,
 // else the shortest seen, hard-truncated on a word boundary.
-function fit(producer) {
+function fit(producer, max) {
+  max = max || POST_MAX;
   let shortest = null;
   for (let i = 0; i < 40; i++) {
     const cand = producer();
-    if (glen(cand) <= POST_MAX) return cand;
+    if (glen(cand) <= max) return cand;
     if (!shortest || glen(cand) < glen(shortest)) shortest = cand;
   }
   const chars = _seg ? [..._seg.segment(shortest)].map(x => x.segment) : Array.from(shortest);
-  return chars.slice(0, POST_MAX - 1).join("").replace(/\s+\S*$/, "") + "\u2026";
+  return chars.slice(0, max - 1).join("").replace(/\s+\S*$/, "") + "\u2026";
 }
 
-// voice: "classic" | "online" | "auto" (auto mixes, online-leaning).
+// voice: "classic" | "online" | "special" | "auto".
+// auto mixes classic/online, with an occasional format-breaker for surprise.
 function composePost(topic, lvl, voice) {
-  const v = voice === "auto" ? (Math.random() < 0.55 ? "online" : "classic") : voice;
+  if (voice === "auto" && Math.random() < 0.12) {
+    return { text: fit(() => specialProducer(topic, lvl), 260), voice: "special" };
+  }
+  let v = voice;
+  if (v === "auto") v = Math.random() < 0.5 ? "online" : "classic";
+  if (v === "special") return { text: fit(() => specialProducer(topic, lvl), 260), voice: v };
   const producer = v === "online" ? () => onlineProducer(topic, lvl) : () => classicProducer(topic, lvl);
   return { text: fit(producer), voice: v };
 }
@@ -493,7 +578,7 @@ function pickTopic() {
 
 function pickVoice() {
   const v = (process.env.VOICE || "auto").toLowerCase();
-  return ["classic", "online", "auto"].includes(v) ? v : "auto";
+  return ["classic", "online", "special", "auto"].includes(v) ? v : "auto";
 }
 
 /* ------------------------------------------------------------------ */
